@@ -1,0 +1,176 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<title>Premium Mobile Tetris 3D</title>
+<meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no">
+<style>
+html, body { margin:0; padding:0; background:#000; overflow:hidden; font-family:system-ui; touch-action:none; }
+canvas { display:block; margin:auto; }
+#score { position:fixed; top:10px; left:50%; transform:translateX(-50%); color:#fff; background:rgba(255,255,255,0.1); padding:8px 18px; border-radius:14px; z-index:10; font-weight:bold; }
+#fs { position:fixed; top:10px; right:10px; width:44px; height:44px; color:#fff; font-size:18px; display:flex; align-items:center; justify-content:center; z-index:10; cursor:pointer; }
+#pauseBtn { position:fixed; top:10px; left:10px; width:44px; height:44px; color:#fff; font-size:18px; display:flex; align-items:center; justify-content:center; z-index:10; cursor:pointer; }
+#overlay,#leaderboardPage { position:fixed; inset:0; background:#fff; display:flex; align-items:center; justify-content:center; flex-direction:column; z-index:20; }
+#overlay.hidden,#leaderboardPage.hidden { display:none; }
+#overlay h1,#leaderboardPage h1 { font-size:60px; margin:0; color:#000; font-weight:bold; text-align:center; }
+#overlay .btnStart,#overlay .btnRestart,#leaderboardPage .btnClose { padding:18px 36px; border:none; border-radius:20px; background:#FFA500; color:#fff; font-size:26px; margin-top:30px; font-weight:bold; cursor:pointer; }
+#leaderboardContent { margin-top:20px; text-align:center; width:80%; }
+#leaderboardContent div { color:#000; font-size:20px; margin:4px 0; display:flex; align-items:center; justify-content:center; }
+#privacyModal { position:fixed; inset:0; background:rgba(0,0,0,0.9); display:flex; align-items:center; justify-content:center; flex-direction:column; z-index:30; color:#fff; padding:20px; text-align:center; }
+#privacyModal.hidden { display:none; }
+#privacyModal h2 { font-size:28px; margin-bottom:20px; }
+#privacyModal p { font-size:16px; margin-bottom:20px; line-height:1.5; }
+#privacyModal button { padding:16px 30px; font-size:18px; border:none; border-radius:16px; background:#FFA500; color:#fff; cursor:pointer; }
+/* BUTTONS */
+.btn { background:transparent; width:70px; height:70px; display:flex; align-items:center; justify-content:center; user-select:none; cursor:pointer; pointer-events:auto; }
+.drop { width:120px; height:80px; }
+.btn svg { width:40px; height:40px; stroke:white; fill:white; filter: drop-shadow(0 0 6px rgba(255,255,255,0.7)) drop-shadow(0 0 10px rgba(255,255,255,0.5)); transition: transform 0.1s, filter 0.2s; }
+.btn:active svg { transform: scale(0.85); filter: drop-shadow(0 0 12px rgba(255,255,255,0.9)) drop-shadow(0 0 18px rgba(255,255,255,0.7)); }
+</style>
+</head>
+<body>
+
+<div id="score">Score: 0</div>
+<div id="fs">⛶</div>
+<div id="pauseBtn">
+<svg viewBox="0 0 24 24"><path d="M6 4h4v16H6zM14 4h4v16h-4z" stroke="white" stroke-width="2" fill="white"/></svg>
+</div>
+
+<!-- Privacy Modal -->
+<div id="privacyModal">
+<h2>Privacy Policy</h2>
+<p>We use ads to provide this game for free. Your data may be collected by our ad partners to show personalized ads. By clicking “Accept & Start”, you agree to our Privacy Policy.</p>
+<button id="acceptPrivacy">Accept & Start</button>
+</div>
+
+<!-- Game Overlay -->
+<div id="overlay" class="hidden">
+<h1>TETRIS</h1>
+</div>
+
+<!-- Leaderboard -->
+<div id="leaderboardPage" class="hidden">
+<h1>Leaderboard</h1>
+<div id="leaderboardContent"></div>
+<button class="btnClose">Close</button>
+</div>
+
+<canvas id="c"></canvas>
+
+<div id="controls">
+<div class="btn" id="left" style="position:fixed;bottom:100px;left:20px;">
+<svg viewBox="0 0 24 24"><path d="M15 6l-6 6 6 6" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" fill="none"/></svg>
+</div>
+<div class="btn" id="right" style="position:fixed;bottom:100px;right:20px;">
+<svg viewBox="0 0 24 24"><path d="M9 6l6 6-6 6" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" fill="none"/></svg>
+</div>
+<div class="btn" id="rotate" style="position:fixed;bottom:100px;left:50%;transform:translateX(-50%);">
+<svg viewBox="0 0 24 24">
+<path d="M4 4v6h6" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" fill="none"/>
+<path d="M20 20v-6h-6" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" fill="none"/>
+</svg>
+</div>
+<div class="btn drop" id="down" style="position:fixed;bottom:-10px;left:50%;transform:translateX(-50%);">
+<svg viewBox="0 0 24 24"><path d="M12 2v16m0 0l-4-4m4 4l4-4" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" fill="none"/></svg>
+</div>
+</div>
+
+<script>
+// AUTO FULLSCREEN ON MOBILE
+document.addEventListener("DOMContentLoaded", ()=>{
+    const elem = document.documentElement;
+    if(elem.requestFullscreen){ elem.requestFullscreen().catch(()=>{}); }
+});
+
+// AUDIO
+let audioReady=false;
+const AC=window.AudioContext||window.webkitAudioContext;
+const audioCtx=new AC();
+function unlockAudio(){ if(!audioReady){audioCtx.resume();audioReady=true;} }
+function sound(f,d,v=0.12){ if(!audioReady)return; const o=audioCtx.createOscillator(),g=audioCtx.createGain(); o.frequency.value=f;o.type="sawtooth";g.gain.value=v;o.connect(g);g.connect(audioCtx.destination); o.start(); o.stop(audioCtx.currentTime+d);}
+function blastSound(){if(!audioReady)return; const o=audioCtx.createOscillator(),g=audioCtx.createGain(); o.type="square"; o.frequency.setValueAtTime(200,audioCtx.currentTime); g.gain.setValueAtTime(0.3,audioCtx.currentTime); g.gain.exponentialRampToValueAtTime(0.001,audioCtx.currentTime+0.3); o.connect(g); g.connect(audioCtx.destination); o.start(); o.stop(audioCtx.currentTime+0.3);}
+
+// CANVAS
+const canvas=c,ctx=canvas.getContext("2d");
+function resize(){canvas.width=innerWidth;canvas.height=innerHeight;}
+resize(); window.addEventListener("resize",resize);
+
+// FULLSCREEN BUTTON
+const fs = document.getElementById("fs");
+fs.addEventListener("click", ()=>{
+    const elem = document.documentElement;
+    if(!document.fullscreenElement){ elem.requestFullscreen().catch(()=>{}); }
+    else { document.exitFullscreen().catch(()=>{}); }
+});
+
+// GAME VARIABLES
+const COLS=10,ROWS=20;
+const COLORS=[null,"#4169E1","#FF1493","#FF4500","#FFD700","#32CD32","#FFA500","#FFF5E1"];
+const SHAPES=[[],[[1,1,1,1]],[[2,0,0],[2,2,2]],[[0,0,3],[3,3,3]],[[4,4],[4,4]],[[0,5,5],[5,5,0]],[[0,6,0],[6,6,6]],[[7,7,0],[0,7,7]]];
+let board,piece,score=0,gameOver=false;
+let last=0,dropTime=600,dropCounter=0;
+let particles=[];
+let paused=false;
+
+const scoreDiv=document.getElementById("score");
+const overlay=document.getElementById("overlay");
+const privacyModal=document.getElementById("privacyModal");
+const acceptPrivacy=document.getElementById("acceptPrivacy");
+const pauseBtn=document.getElementById("pauseBtn");
+const leaderboardPage=document.getElementById("leaderboardPage");
+const leaderboardContent=document.getElementById("leaderboardContent");
+
+// SCORE STORAGE
+function getScores(){return JSON.parse(localStorage.getItem("tetrisScores")||"[]");}
+function saveScore(s){let scores=getScores(); scores.push(s); scores.sort((a,b)=>b-a); if(scores.length>10)scores=slice(0,10); localStorage.setItem("tetrisScores",JSON.stringify(scores));}
+function displayLeaderboard(){leaderboardContent.innerHTML=""; let scores=getScores(); const trophies=["🏆","🥈","🥉"]; for(let i=0;i<scores.length;i++){let trophy=i<3?trophies[i]:""; let div=document.createElement("div"); div.textContent=`${i+1}. ${scores[i]} ${trophy}`; leaderboardContent.appendChild(div); }}
+
+// CLOSE LEADERBOARD
+document.querySelector("#leaderboardPage .btnClose").addEventListener("click",()=>{
+    leaderboardPage.classList.add("hidden");
+    overlay.classList.remove("hidden");
+});
+
+// RESET AND NEW PIECE
+function reset(){board=Array.from({length:ROWS},()=>Array(COLS).fill(0)); score=0; scoreDiv.textContent="Score: "+score; piece=newPiece(); gameOver=false; particles=[];}
+function scoreBox(){scoreDiv.textContent="Score: "+score;}
+function newPiece(){const p={shape:SHAPES[(Math.random()*7|0)+1],x:3,y:0}; if(collide(p)) end(); return p;}
+function end(){gameOver=true; saveScore(score); displayLeaderboard(); overlay.classList.add("hidden"); leaderboardPage.classList.remove("hidden"); sound(80,0.6,0.2);}
+function collide(p){return p.shape.some((r,y)=>r.some((v,x)=>{if(!v)return false; let nx=p.x+x,ny=p.y+y; return nx<0||nx>=COLS||ny>=ROWS||board[ny]?.[nx];}))}
+function rotate(){if(gameOver)return; const old=piece.shape; piece.shape=piece.shape[0].map((_,i)=>piece.shape.map(r=>r[i]).reverse()); if(collide(piece))piece.shape=old; sound(700,0.06);}
+function merge(){piece.shape.forEach((r,y)=>r.forEach((v,x)=>{if(v)board[piece.y+y][piece.x+x]=v;}));}
+function addParticles(y){blastSound(); for(let i=0;i<COLS;i++){if(board[y][i]){for(let p=0;p<5;p++){particles.push({x:i*BLOCK+BLOCK/2+Math.random()*BLOCK/2-BLOCK/4,y:y*BLOCK+BLOCK/2,vx:(Math.random()-0.5)*3,vy:-Math.random()*5,life:30+Math.random()*15,color:COLORS[board[y][i]]});}}}}
+function clearLines(){for(let y=ROWS-1;y>=0;y--){if(board[y].every(v=>v)){addParticles(y); board.splice(y,1); board.unshift(Array(COLS).fill(0)); score+=100; scoreBox(); y++;}}}
+function drop(){if(gameOver||paused)return; piece.y++; if(collide(piece)){piece.y--; merge(); clearLines(); piece=newPiece(); sound(150,0.05);} dropCounter=0;}
+
+let BLOCK=24;
+function drawBlock(x,y,c){const s=BLOCK; ctx.fillStyle=c; ctx.fillRect(x*s,y*s,s,s); ctx.strokeStyle="#000"; ctx.lineWidth=1; ctx.strokeRect(x*s,y*s,s,s);}
+function draw(){ctx.clearRect(0,0,canvas.width,canvas.height); BLOCK=Math.floor(Math.min(innerWidth*0.9/COLS,innerHeight*0.75/ROWS)); const ox=(innerWidth-COLS*BLOCK)/2,oy=innerHeight*0.08; ctx.save(); ctx.translate(ox,oy); board.forEach((r,y)=>r.forEach((v,x)=>v&&drawBlock(x,y,COLORS[v]))); piece.shape.forEach((r,y)=>r.forEach((v,x)=>v&&drawBlock(piece.x+x,piece.y+y,COLORS[v]))); ctx.restore(); drawParticles();}
+function drawParticles(){for(let i=particles.length-1;i>=0;i--){let p=particles[i];ctx.fillStyle=p.color;ctx.beginPath();ctx.arc(p.x,p.y,3,0,Math.PI*2);ctx.fill(); p.x+=p.vx; p.y+=p.vy; p.vy+=0.15; p.life--; if(p.life<=0)particles.splice(i,1);}}
+
+function update(t=0){if(!gameOver&&!paused){dropCounter+=t-last;if(dropCounter>dropTime)drop();} last=t; draw(); requestAnimationFrame(update);}
+
+function bindBtn(btn,fn,interval){let h=null; const start=(e)=>{e.preventDefault();unlockAudio();if(h)return;fn();h=setInterval(fn,interval);}; const end=()=>{if(h)clearInterval(h);h=null;}
+btn.addEventListener("touchstart",start); btn.addEventListener("mousedown",start); btn.addEventListener("touchend",end); btn.addEventListener("mouseup",end); btn.addEventListener("touchcancel",end); btn.addEventListener("mouseleave",end);}
+bindBtn(document.getElementById("left"),()=>{piece.x--;if(collide(piece))piece.x++;},120);
+bindBtn(document.getElementById("right"),()=>{piece.x++;if(collide(piece))piece.x--;},120);
+bindBtn(document.getElementById("down"),drop,80);
+document.getElementById("rotate").addEventListener("touchstart",(e)=>{e.preventDefault(); rotate();});
+document.getElementById("rotate").addEventListener("mousedown",(e)=>{e.preventDefault(); rotate();});
+
+// START GAME
+function startGame(){overlay.classList.add("hidden");leaderboardPage.classList.add("hidden"); reset(); update();}
+acceptPrivacy.addEventListener("click",()=>{privacyModal.classList.add("hidden"); startGame();});
+
+// PAUSE BUTTON
+pauseBtn.addEventListener("click",()=>{
+paused = !paused;
+if(paused){
+pauseBtn.innerHTML = `<svg viewBox="0 0 24 24"><path d="M4 4h16v16H4z" stroke="white" stroke-width="2" fill="white"/></svg>`;
+} else {
+pauseBtn.innerHTML = `<svg viewBox="0 0 24 24"><path d="M6 4h4v16H6zM14 4h4v16h-4z" stroke="white" stroke-width="2" fill="white"/></svg>`;
+}
+});
+</script>
+</body>
+</html>
